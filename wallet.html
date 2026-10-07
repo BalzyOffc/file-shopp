@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>Wallet - Shopp Digital</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+<script>eruda.init();</script>
+</head>
+<body>
+
+  <!-- Container utama: wallet.js akan render ke sini -->
+  <div id="app"></div>
+
+  <!-- Overlay loading (di luar #app agar tidak ketimpa innerHTML) -->
+  <div id="wallet-loading"
+       style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+              background:#0d0d12;color:#aaa;font-family:sans-serif;z-index:9999;">
+    <div style="text-align:center;">
+      <div style="width:36px;height:36px;margin:0 auto 12px;border:3px solid #333;
+                  border-top-color:#8b5cf6;border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+      Memuat saldo...
+    </div>
+  </div>
+
+  <!-- Panel error (muncul kalau ada masalah) -->
+  <div id="wallet-error"
+       style="display:none;position:fixed;inset:0;padding:24px;
+              background:#0d0d12;color:#eee;font-family:sans-serif;z-index:10000;
+              align-items:center;justify-content:center;">
+    <div style="max-width:420px;text-align:center;">
+      <div style="font-size:40px;margin-bottom:12px;">⚠️</div>
+      <h2 style="margin:0 0 8px;">Gagal memuat wallet</h2>
+      <p id="wallet-error-msg" style="color:#f87171;word-break:break-word;"></p>
+      <button onclick="location.reload()"
+              style="margin-top:16px;padding:10px 20px;border:0;border-radius:8px;
+                     background:#8b5cf6;color:#fff;font-size:14px;cursor:pointer;">
+        Coba Lagi
+      </button>
+    </div>
+  </div>
+
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+
+  <!-- ====== GLOBAL GUARD (dipasang sebelum script lain) ====== -->
+  <script>
+    // Polyfill crypto.randomUUID untuk browser lama / non-HTTPS
+    if (!window.crypto) window.crypto = {};
+    if (typeof window.crypto.randomUUID !== 'function') {
+      window.crypto.randomUUID = function () {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+          var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+      };
+    }
+
+    // Cegah SEMUA submit form default (biar tidak reload halaman)
+    document.addEventListener('submit', function (e) {
+      if (!e.defaultPrevented) e.preventDefault();
+    }, true);
+
+    // Warning kalau user mau keluar saat form sedang diisi
+    window.addEventListener('beforeunload', function (e) {
+      var a = document.getElementById('amount');
+      var p = document.getElementById('proof');
+      var hasAmount = a && a.value && Number(a.value) > 0;
+      var hasFile   = p && p.files && p.files.length > 0;
+      if (hasAmount || hasFile) { e.preventDefault(); e.returnValue = ''; }
+    });
+
+    // Helper: sembunyikan loading & tampilkan error
+    window.hideWalletLoading = function () {
+      var el = document.getElementById('wallet-loading');
+      if (el) el.style.display = 'none';
+    };
+    window.showWalletError = function (msg) {
+      var box = document.getElementById('wallet-error');
+      var txt = document.getElementById('wallet-error-msg');
+      if (txt) txt.textContent = msg || 'Terjadi kesalahan tidak diketahui.';
+      if (box) box.style.display = 'flex';
+    };
+
+    // Safety timeout: kalau 12 detik belum render, tampilkan error
+    window.__walletTimeout = setTimeout(function () {
+      var loading = document.getElementById('wallet-loading');
+      // Kalau loading masih tampil & #app masih kosong/loading → error
+      var appEmpty = !document.querySelector('#app main');
+      if (loading && loading.style.display !== 'none' && appEmpty) {
+        window.showWalletError('Waktu habis memuat data. Periksa koneksi atau coba lagi.');
+      }
+    }, 12000);
+
+    // Tangkap error global dari script lain
+    window.addEventListener('error', function (ev) {
+      console.error('[wallet] global error:', ev.error || ev.message);
+    });
+    window.addEventListener('unhandledrejection', function (ev) {
+      console.error('[wallet] unhandled promise:', ev.reason);
+    });
+  </script>
+
+  <!-- ====== DEPENDENSI ====== -->
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/supabase.js"></script>
+  <script src="assets/js/auth.js"></script>
+
+  <!-- Cek dependency dasar sebelum load wallet.js -->
+  <script>
+    (function () {
+      var missing = [];
+      if (typeof window.sb === 'undefined' && typeof window.supabaseClient === 'undefined') {
+        // cek apakah supabase instance punya nama lain
+        if (typeof window.supabase === 'undefined') missing.push('Supabase client (config.js / supabase.js)');
+      }
+      if (typeof window.requireAuth === 'undefined') missing.push('requireAuth() (auth.js)');
+      if (typeof window.nav === 'undefined') missing.push('nav() (layout)');
+      if (missing.length) {
+        clearTimeout(window.__walletTimeout);
+        window.showWalletError('Script berikut belum ter-load: ' + missing.join(', '));
+      }
+    })();
+  </script>
+
+  <!-- ====== WALLET SCRIPT ====== -->
+  <script src="assets/js/wallet.js?v=20250103"></script>
+
+  <!-- Fallback: kalau wallet.js tidak render apapun dalam 3 detik, sembunyikan loading & coba render -->
+  <script>
+    setTimeout(function () {
+      var app = document.getElementById('app');
+      if (app && app.children.length === 0) {
+        // wallet.js mungkin gagal; biarkan timeout utama yang menangani
+        console.warn('[wallet] wallet.js tidak render apapun setelah 3 detik');
+      }
+    }, 3000);
+  </script>
+
+</body>
+</html>
